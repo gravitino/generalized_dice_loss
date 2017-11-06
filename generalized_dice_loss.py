@@ -58,9 +58,8 @@ def generalized_dice_loss(pred, true, p=2, q=1, eps=1E-64):
         # inverse L_q weighting for loss scores
         weights = tf.abs(loss)**q+eps
         weights = tf.reduce_sum(weights)/weights
-        loss    = tf.reduce_sum(loss*weights)/tf.reduce_sum(weights)
 
-        return loss
+        return tf.reduce_sum(loss*weights)/tf.reduce_sum(weights)
 
 if __name__ == "__main__":
     import numpy as np
