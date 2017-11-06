@@ -1,5 +1,4 @@
 import tensorflow as tf
-import numpy as np
 
 def generalized_dice_loss(pred, true, eps=1E-64):
     """pred and true are tensors of shape (b, w_0, w_1, ..., c) where
@@ -10,36 +9,46 @@ def generalized_dice_loss(pred, true, eps=1E-64):
 
     assert(pred.get_shape()[1:] == true.get_shape()[1:])
 
-    shape_pred = pred.get_shape()
-    shape_true = true.get_shape()
-    prod_pred = reduce(lambda x,y:x*y, shape_pred[1:-1], tf.Dimension(1))
-    prod_true = reduce(lambda x,y:x*y, shape_true[1:-1], tf.Dimension(1))
+    m = "the values in your last layer must be strictly in [0, 1]"
+    with tf.control_dependencies([tf.assert_non_negative(pred, message=m),
+                                  tf.assert_non_negative(true, message=m),
+                                  tf.assert_less_equal(pred, 1.0, message=m),
+                                  tf.assert_less_equal(true, 1.0, message=m)]):
 
-    # reshape to shape (b, W, c) where W is product of w_k
-    pred = tf.reshape(pred, [-1, prod_pred, shape_pred[-1]])
-    true = tf.reshape(true, [-1, prod_true, shape_true[-1]])
+        shape_pred = pred.get_shape()
+        shape_true = true.get_shape()
+        prod_pred = reduce(lambda x,y:x*y, shape_pred[1:-1], tf.Dimension(1))
+        prod_true = reduce(lambda x,y:x*y, shape_true[1:-1], tf.Dimension(1))
 
-    # inverse square weighting for class cardinalities
-    weights = tf.square(tf.reduce_sum(true, axis=[1]))+eps
-    weights = tf.expand_dims(tf.reduce_sum(weights, axis=[-1]), -1)/weights
+        # reshape to shape (b, W, c) where W is product of w_k
+        pred = tf.reshape(pred, [-1, prod_pred, shape_pred[-1]])
+        true = tf.reshape(true, [-1, prod_true, shape_true[-1]])
 
-    # the traditional dice formula
-    inter = tf.reduce_sum(weights*tf.reduce_sum(pred*true, axis=[1]), axis=[-1])
-    union = tf.reduce_sum(weights*tf.reduce_sum(pred+true, axis=[1]), axis=[-1])
+        # inverse square weighting for class cardinalities
+        weights = tf.square(tf.reduce_sum(true, axis=[1]))+eps
+        weights = tf.expand_dims(tf.reduce_sum(weights, axis=[-1]), -1)/weights
+
+        # the traditional dice formula
+        inter = tf.reduce_sum(weights*tf.reduce_sum(pred*true, axis=[1]),
+                              axis=[-1])
+        union = tf.reduce_sum(weights*tf.reduce_sum(pred+true, axis=[1]),
+                              axis=[-1])
 
     return tf.reduce_mean(1.0-2.0*(inter+eps)/(union+eps))
 
-def convert_to_mask(batch, threshold=0.5):
-
-    result = np.zeros(batch.shape+(2,), dtype=batch.dtype)
-    result[:,:,0] = batch >  threshold
-    result[:,:,1] = batch <= threshold
-
-    return result
-
 if __name__ == "__main__":
+    import numpy as np
     from tensorflow.examples.tutorials.mnist import input_data
     mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
+
+    def convert_to_mask(batch, threshold=0.5):
+        """toy model which segments image by thresholding"""
+
+        result = np.zeros(batch.shape+(2,), dtype=batch.dtype)
+        result[:,:,0] = batch >  threshold
+        result[:,:,1] = batch <= threshold
+
+        return result
 
     batch_size, print_every, activation = 128, 1024, lambda x:0.5*(tf.tanh(x)+1)
 
