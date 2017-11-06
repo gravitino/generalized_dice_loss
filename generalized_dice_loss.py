@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-def generalized_dice_loss(pred, true, p=2, q=1, eps=1E-64):
+def generalized_dice_loss(pred, true, p=1, q=1, eps=1E-6):
     """pred and true are tensors of shape (b, w_0, w_1, ..., c) where
              b   ... batch size
              w_k ... width of input in k-th dimension
@@ -17,10 +17,7 @@ def generalized_dice_loss(pred, true, p=2, q=1, eps=1E-64):
     assert(pred.get_shape()[1:] == true.get_shape()[1:])
 
     m = "the values in your last layer must be strictly in [0, 1]"
-    with tf.control_dependencies([tf.assert_non_negative(pred, message=m),
-                                  tf.assert_non_negative(true, message=m),
-                                  tf.assert_less_equal(pred, 1.0, message=m),
-                                  tf.assert_less_equal(true, 1.0, message=m)]):
+    with tf.control_dependencies([]):
 
         shape_pred = pred.get_shape()
         shape_true = true.get_shape()
@@ -34,8 +31,8 @@ def generalized_dice_loss(pred, true, p=2, q=1, eps=1E-64):
         # no class reweighting at all
         if p == 0:
             # unweighted intersection and union
-            inter = tf.reduce_sum(pred*true, axis=[1, 2])
-            union = tf.reduce_sum(pred+true, axis=[1, 2])
+            inter = tf.reduce_mean(pred*true, axis=[1, 2])
+            union = tf.reduce_mean(pred+true, axis=[1, 2])
         else:
             # inverse L_p weighting for class cardinalities
             weights = tf.abs(tf.reduce_sum(true, axis=[1]))**p+eps
@@ -43,10 +40,10 @@ def generalized_dice_loss(pred, true, p=2, q=1, eps=1E-64):
                     / weights
 
             # weighted intersection and union
-            inter = tf.reduce_sum(weights*tf.reduce_sum(pred*true, axis=[1]),
-                                  axis=[-1])
-            union = tf.reduce_sum(weights*tf.reduce_sum(pred+true, axis=[1]),
-                                  axis=[-1])
+            inter = tf.reduce_mean(weights*tf.reduce_mean(pred*true, axis=[1]),
+                                   axis=[-1])
+            union = tf.reduce_mean(weights*tf.reduce_mean(pred+true, axis=[1]),
+                                   axis=[-1])
 
         # the traditional dice formula
         loss = 1.0-2.0*(inter+eps)/(union+eps)
@@ -59,7 +56,7 @@ def generalized_dice_loss(pred, true, p=2, q=1, eps=1E-64):
         weights = tf.abs(loss)**q+eps
         weights = tf.reduce_sum(weights)/weights
 
-        return tf.reduce_sum(loss*weights)/tf.reduce_sum(weights)
+        return tf.reduce_mean(loss*weights)/tf.reduce_mean(weights)
 
 if __name__ == "__main__":
     import numpy as np
@@ -86,19 +83,24 @@ if __name__ == "__main__":
     y = activation(tf.tensordot(x, W, axes=[[1],[0]])+b)
 
     loss = generalized_dice_loss(y, x_)
-    step = tf.train.AdamOptimizer(0.001).minimize(loss)
+    step = tf.train.AdamOptimizer(0.01).minimize(loss)
 
     sess = tf.Session()
     sess.run(tf.global_variables_initializer())
 
-    for iteration in range(2**14):
+    for iteration in range(2**16):
         batch_x, _ = mnist.train.next_batch(batch_size)
         step_, loss_ = sess.run([step, loss],
                                 feed_dict={x : batch_x,
                                            x_: convert_to_mask(batch_x)})
 
         if iteration % print_every == 0:
-            print "loss :", loss_
+            batch_x, _ = mnist.test.next_batch(10000)
+            loss_val   = sess.run(loss,
+                                  feed_dict={x : batch_x,
+                                             x_: convert_to_mask(batch_x)})
+
+            print "loss:", loss_, "loss_val:", loss_val
 
     import matplotlib; matplotlib.use("Agg")
     import pylab as pl
