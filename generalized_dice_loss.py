@@ -1,12 +1,19 @@
 import tensorflow as tf
 
-def generalized_dice_loss(pred, true, eps=1E-64):
+def generalized_dice_loss(pred, true, p=2, q=1, eps=1E-64):
     """pred and true are tensors of shape (b, w_0, w_1, ..., c) where
              b   ... batch size
              w_k ... width of input in k-th dimension
              c   ... number of segments/classes
-       furthermore, boths tensors have exclusively values in [0, 1]"""
+       Furthermore, boths tensors have exclusively values in [0, 1].
+       more than already good ones. The remaining parameters are as follows:
+             p   ... power of inverse weigthing (p=2 default, p=0 uniform)
+             q   ... power of inverse loss weighting (q=1 default, q=0 none)
+             eps ... regularization term if empty classes occur"""
 
+    assert(p   >= 0)
+    assert(q   >= 0)
+    assert(eps >= 0)
     assert(pred.get_shape()[1:] == true.get_shape()[1:])
 
     m = "the values in your last layer must be strictly in [0, 1]"
@@ -24,8 +31,8 @@ def generalized_dice_loss(pred, true, eps=1E-64):
         pred = tf.reshape(pred, [-1, prod_pred, shape_pred[-1]])
         true = tf.reshape(true, [-1, prod_true, shape_true[-1]])
 
-        # inverse square weighting for class cardinalities
-        weights = tf.square(tf.reduce_sum(true, axis=[1]))+eps
+        # inverse L_p weighting for class cardinalities
+        weights = tf.abs(tf.reduce_sum(true, axis=[1]))**p+eps
         weights = tf.expand_dims(tf.reduce_sum(weights, axis=[-1]), -1)/weights
 
         # the traditional dice formula
@@ -34,7 +41,17 @@ def generalized_dice_loss(pred, true, eps=1E-64):
         union = tf.reduce_sum(weights*tf.reduce_sum(pred+true, axis=[1]),
                               axis=[-1])
 
-    return tf.reduce_mean(1.0-2.0*(inter+eps)/(union+eps))
+        loss = 1.0-2.0*(inter+eps)/(union+eps)
+
+        if q == 0:
+            return tf.reduce_mean(loss)
+
+        # inverse L_q weighting for loss scores
+        weights = tf.abs(loss)**q+eps
+        weights = tf.reduce_sum(weights)/weights
+        loss    = tf.reduce_sum(loss*weights)/tf.reduce_sum(weights)
+
+        return loss
 
 if __name__ == "__main__":
     import numpy as np
@@ -66,7 +83,7 @@ if __name__ == "__main__":
     sess = tf.Session()
     sess.run(tf.global_variables_initializer())
 
-    for iteration in range(2**16):
+    for iteration in range(2**14):
         batch_x, _ = mnist.train.next_batch(batch_size)
         step_, loss_ = sess.run([step, loss],
                                 feed_dict={x : batch_x,
