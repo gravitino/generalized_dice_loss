@@ -31,18 +31,27 @@ def generalized_dice_loss(pred, true, p=2, q=1, eps=1E-64):
         pred = tf.reshape(pred, [-1, prod_pred, shape_pred[-1]])
         true = tf.reshape(true, [-1, prod_true, shape_true[-1]])
 
-        # inverse L_p weighting for class cardinalities
-        weights = tf.abs(tf.reduce_sum(true, axis=[1]))**p+eps
-        weights = tf.expand_dims(tf.reduce_sum(weights, axis=[-1]), -1)/weights
+        # no class reweighting at all
+        if p == 0:
+            # unweighted intersection and union
+            inter = tf.reduce_sum(pred*true, axis=[1, 2])
+            union = tf.reduce_sum(pred+true, axis=[1, 2])
+        else:
+            # inverse L_p weighting for class cardinalities
+            weights = tf.abs(tf.reduce_sum(true, axis=[1]))**p+eps
+            weights = tf.expand_dims(tf.reduce_sum(weights, axis=[-1]), -1) \
+                    / weights
+
+            # weighted intersection and union
+            inter = tf.reduce_sum(weights*tf.reduce_sum(pred*true, axis=[1]),
+                                  axis=[-1])
+            union = tf.reduce_sum(weights*tf.reduce_sum(pred+true, axis=[1]),
+                                  axis=[-1])
 
         # the traditional dice formula
-        inter = tf.reduce_sum(weights*tf.reduce_sum(pred*true, axis=[1]),
-                              axis=[-1])
-        union = tf.reduce_sum(weights*tf.reduce_sum(pred+true, axis=[1]),
-                              axis=[-1])
-
         loss = 1.0-2.0*(inter+eps)/(union+eps)
 
+        # no reweighting of the batch
         if q == 0:
             return tf.reduce_mean(loss)
 
